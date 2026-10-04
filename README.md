@@ -1,4 +1,4 @@
-# 🌾 BrickFarm System  
+# 🌾 BrickFarms System  
 **Smart Farming. Simplified. Powered by BrickServers NG Limited.**  
 Website: [https://app.brickfarm.ng](https://app.brickfarm.ng)  
 Corporate page: [https://brickservers.ng](https://brickservers.ng)
