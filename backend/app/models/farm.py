@@ -11,6 +11,7 @@ class Farm(Base):
     country: Mapped[str] = mapped_column(String(2), nullable=False)
     state: Mapped[str] = mapped_column(String(100))
     lga: Mapped[str] = mapped_column(String(100))
+    farm_type: Mapped[str] = mapped_column(String(60), default="crop")
 
 class FieldPlot(Base):
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))

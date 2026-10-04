@@ -1,10 +1,13 @@
 /venv/
 /.venv/
 /backend/.venv/
+/backend/.venv-prod/
+/backend/.venv_test/
 /frontend-web/node_modules/
 /mobile/BrickFarmMobile/node_modules/
 .env
 .env.local
+/backend/.env.prod.local
 .DS_Store
 __pycache__/
 *.pyc

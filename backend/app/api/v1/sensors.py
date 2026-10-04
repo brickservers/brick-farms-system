@@ -7,6 +7,8 @@ from app.models.sensor import SensorDevice
 from app.schemas.sensor import DeviceIn, DeviceOut, ReadingIn
 from app.schemas.sensor import DeviceUpdate
 from app.db.session import get_db
+from app.services.notifications import send_bulk_email
+from app.services.plan_limits import assert_plan_limit
 
 router = APIRouter(tags=["sensors"])
 
@@ -14,6 +16,7 @@ router = APIRouter(tags=["sensors"])
 @router.post("/devices", response_model=DeviceOut, status_code=status.HTTP_201_CREATED)
 async def create_device(d: DeviceIn, ctx=Depends(tenant_scoped_user)):
     token, db = ctx
+    await assert_plan_limit(db, str(token.tenant_id), "sensors")
     dev = SensorDevice(tenant_id=token.tenant_id, **d.model_dump())
     db.add(dev)
     await db.commit()
@@ -111,6 +114,15 @@ async def ingest_reading(payload: ReadingIn, db: AsyncSession = Depends(get_db),
     res = await db.execute(insert_sql, params)
     row = res.fetchone()
     await db.commit()
+    owner_res = await db.execute(
+        text('SELECT email FROM "user" WHERE tenant_id = :tenant_id AND is_active = true AND role IN (\'owner\', \'admin\', \'agronomist\')'),
+        {"tenant_id": str(dev.tenant_id)},
+    )
+    await send_bulk_email(
+        [item.email for item in owner_res.fetchall()],
+        "BrickFarms DAP sensor reading received",
+        f"Sensor reading received.\n\nMetric: {payload.metric}\nValue: {payload.value} {payload.unit or ''}\nDevice: {payload.device_id}\n\nSigned,\nBrickServers NG Limited",
+    )
     id_val = None
     if row:
         try:
@@ -123,18 +135,28 @@ async def ingest_reading(payload: ReadingIn, db: AsyncSession = Depends(get_db),
 @router.get("/readings/query")
 async def query_readings(device_id: str | None = None, from_ts: str | None = None, to_ts: str | None = None, metric: str | None = None, ctx=Depends(tenant_scoped_user)):
     token, db = ctx
-    q = """
+    filters = ["tenant_id = :tid"]
+    params = {"tid": token.tenant_id}
+    if device_id:
+        filters.append("device_id = :device_id")
+        params["device_id"] = device_id
+    if metric:
+        filters.append("metric = :metric")
+        params["metric"] = metric
+    if from_ts:
+        filters.append("timestamp >= CAST(:from_ts AS timestamptz)")
+        params["from_ts"] = from_ts
+    if to_ts:
+        filters.append("timestamp <= CAST(:to_ts AS timestamptz)")
+        params["to_ts"] = to_ts
+
+    q = f"""
     SELECT id, device_id, metric, value, unit, timestamp, ST_AsGeoJSON(location) as location
     FROM sensor_readings
-    WHERE tenant_id = :tid
-      AND (:device_id IS NULL OR device_id = :device_id)
-      AND (:metric IS NULL OR metric = :metric)
-      AND (:from_ts IS NULL OR timestamp >= :from_ts)
-      AND (:to_ts IS NULL OR timestamp <= :to_ts)
+    WHERE {' AND '.join(filters)}
     ORDER BY timestamp ASC
     LIMIT 10000
     """
-    params = {"tid": token.tenant_id, "device_id": device_id, "metric": metric, "from_ts": from_ts, "to_ts": to_ts}
     res = await db.execute(text(q), params)
     rows = res.fetchall()
     out = []

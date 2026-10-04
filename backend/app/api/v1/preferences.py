@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.deps import tenant_scoped_user
 from app.schemas.preferences import PreferenceIn, PreferenceOut
 from sqlalchemy import text
+import json
 
 router = APIRouter(tags=["preferences"])
 
@@ -26,11 +27,11 @@ async def upsert_preference(key: str, payload: PreferenceIn, ctx=Depends(tenant_
     # upsert
     q = text("""
     INSERT INTO user_preferences (tenant_id, user_id, key, value)
-    VALUES (:tid, :uid, :key, :value)
+    VALUES (:tid, :uid, :key, CAST(:value AS jsonb))
     ON CONFLICT (tenant_id, user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
     RETURNING id, key, value, created_at, updated_at
     """)
-    res = await db.execute(q, {"tid": token.tenant_id, "uid": token.sub, "key": key, "value": payload.value})
+    res = await db.execute(q, {"tid": token.tenant_id, "uid": token.sub, "key": key, "value": json.dumps(payload.value)})
     row = res.fetchone()
     await db.commit()
     return PreferenceOut(id=row.id, key=row.key, value=row.value, created_at=row.created_at, updated_at=row.updated_at)

@@ -1,79 +1,82 @@
-import React, { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
-import MapView from './components/MapView'
-import { fetchTasksWithGeom } from './api/tasks'
+import React, { Suspense, lazy } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
+import { ToastProvider } from './contexts/ToastContext'
 import LoginPage from './pages/Login'
-import RegisterPage from './pages/Register'
 import { ThemeProvider } from './contexts/ThemeContext'
-import ThemeToggle from './components/ThemeToggle'
-import Card from './components/ui/Card'
-
-const Home = () => {
-  const [tasks, setTasks] = useState<any>(null)
-  useEffect(()=>{ fetchTasksWithGeom().then(setTasks).catch(()=>{}) }, [])
-  return (
-    <div style={{display:'grid',gridTemplateColumns:'1fr 420px', gap:16}}>
-      <div>
-        <h2>Overview</h2>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:12}}>
-          <div style={{background:'var(--green-300)',padding:12,borderRadius:8}}>Active Tasks<br/><strong>24</strong></div>
-          <div style={{background:'var(--brown-200)',padding:12,borderRadius:8}}>Farms<br/><strong>6</strong></div>
-          <div style={{background:'var(--green-500)',padding:12,borderRadius:8,color:'#fff'}}>Sensors<br/><strong>128</strong></div>
-        </div>
-        <Card>
-          <MapView tasks={tasks} />
-        </Card>
-      </div>
-      <aside>
-        <h3>Activity</h3>
-        <Card style={{marginBottom:12}}>
-          <p style={{margin:0}}>Recent observations and alerts appear here.</p>
-        </Card>
-        <Card>
-          <p style={{margin:0}}>Quick actions</p>
-        </Card>
-      </aside>
-    </div>
-  )
-}
-
-const Admin = ()=> <div><h3>Admin Dashboard (placeholder)</h3></div>
-const Agronomist = ()=> <div><h3>Agronomist Dashboard (placeholder)</h3></div>
-const Investor = ()=> <div><h3>Investor Dashboard (placeholder)</h3></div>
+import { LanguageProvider } from './contexts/LanguageContext'
+import { PlanProvider } from './contexts/PlanContext'
+import AppShell from './components/layout/AppShell'
+import RequireAuth from './components/auth/RequireAuth'
+import OverviewPage from './pages/Overview'
+import FarmsPage from './pages/Farms'
+import TasksPage from './pages/Tasks'
+import FarmPlansPage from './pages/FarmPlans'
+import WorkersPage from './pages/Workers'
+import SensorsPage from './pages/Sensors'
+import AssetsPage from './pages/Assets'
+import FinancePage from './pages/Finance'
+import ReportsPage from './pages/Reports'
+import DemoPage from './pages/Demo'
+import SettingsPage from './pages/Settings'
+import PaymentsVerify from './pages/PaymentsVerify'
+const FarmMapPage = lazy(() => import('./pages/FarmMap'))
 
 function App(){
   return (
-    <AuthProvider>
-      <ThemeProvider>
-        <div className="app-shell">
-          <header className="app-header">
-            <div style={{display:'flex',alignItems:'center',gap:12}}>
-              <strong>BrickFarm</strong>
-              <nav className="app-nav">
-                <Link to="/">Home</Link>
-                <Link to="/dashboard/admin">Admin</Link>
-              </nav>
-            </div>
-            <div style={{display:'flex',alignItems:'center',gap:12}}>
-              <ThemeToggle />
-            </div>
-          </header>
-          <main className="app-main">
-            <BrowserRouter>
+    <ToastProvider>
+      <AuthProvider>
+        <ThemeProvider>
+          <LanguageProvider>
+            <PlanProvider>
               <Routes>
-                <Route path="/" element={<Home/>} />
-                <Route path="/login" element={<LoginPage/>} />
-                <Route path="/register" element={<RegisterPage/>} />
-                <Route path="/dashboard/admin" element={<Admin/>} />
-                <Route path="/dashboard/agronomist" element={<Agronomist/>} />
-                <Route path="/dashboard/investor" element={<Investor/>} />
+              <Route path="/login" element={<LoginPage/>} />
+              <Route path="/register" element={<LoginPage initialMode="register" />} />
+              <Route path="/:tenantSlug/login" element={<LoginPage/>} />
+              <Route path="/:tenantSlug/register" element={<LoginPage initialMode="register" />} />
+              <Route element={<RequireAuth />}>
+                <Route element={<AppShell />}>
+                  <Route path="/" element={<OverviewPage/>} />
+                  <Route path="/farms" element={<FarmsPage/>} />
+                  <Route path="/map" element={<Suspense fallback={<div className="panel">Loading map...</div>}><FarmMapPage/></Suspense>} />
+                  <Route path="/tasks" element={<TasksPage/>} />
+                  <Route path="/farm-plans" element={<FarmPlansPage/>} />
+                  <Route path="/workers" element={<WorkersPage/>} />
+                  <Route path="/team" element={<Navigate to="/workers" replace />} />
+                  <Route path="/assets" element={<AssetsPage/>} />
+                  <Route path="/sensors" element={<SensorsPage/>} />
+                  <Route path="/finance" element={<FinancePage/>} />
+                  <Route path="/reports" element={<ReportsPage/>} />
+                  <Route path="/demo" element={<DemoPage/>} />
+                  <Route path="/settings" element={<SettingsPage/>} />
+                  <Route path="/payments/verify" element={<PaymentsVerify/>} />
+                </Route>
+              </Route>
+              <Route element={<RequireAuth />}>
+                <Route path="/:tenantSlug" element={<AppShell />}>
+                  <Route index element={<OverviewPage/>} />
+                  <Route path="farms" element={<FarmsPage/>} />
+                  <Route path="map" element={<Suspense fallback={<div className="panel">Loading map...</div>}><FarmMapPage/></Suspense>} />
+                  <Route path="tasks" element={<TasksPage/>} />
+                  <Route path="farm-plans" element={<FarmPlansPage/>} />
+                  <Route path="workers" element={<WorkersPage/>} />
+                  <Route path="team" element={<Navigate to="../workers" replace />} />
+                  <Route path="assets" element={<AssetsPage/>} />
+                  <Route path="sensors" element={<SensorsPage/>} />
+                  <Route path="finance" element={<FinancePage/>} />
+                  <Route path="reports" element={<ReportsPage/>} />
+                  <Route path="demo" element={<DemoPage/>} />
+                  <Route path="settings" element={<SettingsPage/>} />
+                  <Route path="payments/verify" element={<PaymentsVerify/>} />
+                </Route>
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
-            </BrowserRouter>
-          </main>
-        </div>
-      </ThemeProvider>
-    </AuthProvider>
+            </PlanProvider>
+          </LanguageProvider>
+        </ThemeProvider>
+      </AuthProvider>
+    </ToastProvider>
   )
 }
 

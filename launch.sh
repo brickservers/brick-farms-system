@@ -15,6 +15,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 FRONTEND_DIR="$PROJECT_ROOT/frontend-web"
+VENV_DIR="${BACKEND_VENV:-.venv}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -25,6 +26,51 @@ NC='\033[0m' # No Color
 log_info() { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+
+docker_compose() {
+  if command -v docker-compose &> /dev/null; then
+    docker-compose "$@"
+  elif docker compose version &> /dev/null; then
+    docker compose "$@"
+  else
+    return 127
+  fi
+}
+
+container_running() {
+  docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null | grep -q true
+}
+
+container_exists() {
+  docker inspect "$1" >/dev/null 2>&1
+}
+
+start_docker_direct() {
+  log_warn "Docker Compose not found; starting db/redis with docker run"
+
+  if container_running brickfarm-db; then
+    log_info "brickfarm-db is already running"
+  elif container_exists brickfarm-db; then
+    docker start brickfarm-db >/dev/null
+  else
+    docker volume create brickfarm_db_data_dev >/dev/null
+    docker run -d --name brickfarm-db \
+      -e POSTGRES_USER=brickfarm \
+      -e POSTGRES_PASSWORD=brickfarm_pass \
+      -e POSTGRES_DB=brickfarm \
+      -p 5433:5432 \
+      -v brickfarm_db_data_dev:/var/lib/postgresql/data \
+      postgis/postgis:14-3.4 >/dev/null
+  fi
+
+  if container_running brickfarm-redis; then
+    log_info "brickfarm-redis is already running"
+  elif container_exists brickfarm-redis; then
+    docker start brickfarm-redis >/dev/null
+  else
+    docker run -d --name brickfarm-redis -p 6380:6379 redis:7 >/dev/null
+  fi
+}
 
 # Parse arguments
 BACKEND_ONLY=0
@@ -44,22 +90,23 @@ start_docker_services() {
   log_info "Starting Docker services (Postgres + Redis)..."
   cd "$BACKEND_DIR"
   
-  # Check if docker-compose is available
-  if ! command -v docker-compose &> /dev/null && ! command -v docker &> /dev/null; then
-    log_error "Docker/docker-compose not found. Install Docker first."
+  if ! command -v docker &> /dev/null; then
+    log_error "Docker not found. Install Docker first."
     exit 1
   fi
   
-  docker-compose up -d db redis || {
-    log_error "Failed to start Docker services"
-    exit 1
-  }
+  if ! docker_compose up -d db redis; then
+    start_docker_direct || {
+      log_error "Failed to start Docker services"
+      exit 1
+    }
+  fi
   
   # Wait for Postgres to be ready
   log_info "Waiting for Postgres to be ready on port 5433..."
   local max_attempts=30
   local attempt=0
-  until docker-compose exec -T db pg_isready -U brickfarm >/dev/null 2>&1; do
+  until docker exec brickfarm-db pg_isready -U brickfarm >/dev/null 2>&1 || docker_compose exec -T db pg_isready -U brickfarm >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ $attempt -ge $max_attempts ]; then
       log_error "Postgres failed to start after $max_attempts attempts"
@@ -71,7 +118,7 @@ start_docker_services() {
   
   # Wait for Redis
   log_info "Waiting for Redis to be ready on port 6380..."
-  until docker-compose exec -T redis redis-cli ping >/dev/null 2>&1; do
+  until docker exec brickfarm-redis redis-cli ping >/dev/null 2>&1 || docker_compose exec -T redis redis-cli ping >/dev/null 2>&1; do
     sleep 1
   done
   log_info "✓ Redis is ready"
@@ -85,27 +132,34 @@ setup_backend_env() {
   cd "$BACKEND_DIR"
   
   # Create venv if it doesn't exist
-  if [ ! -d .venv ]; then
+  if [ ! -d "$VENV_DIR" ] && [ -d .venv_test ]; then
+    VENV_DIR=.venv_test
+    log_info "Using existing backend virtual environment: .venv_test"
+  fi
+
+  if [ ! -d "$VENV_DIR" ]; then
     log_info "Creating virtual environment..."
-    python3 -m venv .venv || {
+    python3 -m venv "$VENV_DIR" || {
       log_error "Failed to create venv. Ensure python3 is installed."
       exit 1
     }
   fi
   
   # Activate venv and install dependencies
-  source .venv/bin/activate
-  log_info "Upgrading pip..."
-  pip install --upgrade pip setuptools wheel >/dev/null 2>&1 || {
-    log_error "Failed to upgrade pip"
-    exit 1
-  }
-  
-  log_info "Installing backend dependencies..."
-  pip install -r requirements.txt >/dev/null 2>&1 || {
-    log_error "Failed to install dependencies from requirements.txt"
-    exit 1
-  }
+  source "$VENV_DIR/bin/activate"
+  if [ "$VENV_DIR" != ".venv_test" ]; then
+    log_info "Upgrading pip..."
+    pip install --upgrade pip setuptools wheel >/dev/null 2>&1 || {
+      log_error "Failed to upgrade pip"
+      exit 1
+    }
+    
+    log_info "Installing backend dependencies..."
+    pip install -r requirements.txt >/dev/null 2>&1 || {
+      log_error "Failed to install dependencies from requirements.txt"
+      exit 1
+    }
+  fi
   
   log_info "✓ Python environment ready"
 }
@@ -117,7 +171,7 @@ run_migrations() {
   log_info "Running database migrations..."
   cd "$BACKEND_DIR"
   
-  source .venv/bin/activate
+  source "$VENV_DIR/bin/activate"
   
   # Run alembic upgrade
   if ! alembic upgrade head; then
@@ -135,7 +189,7 @@ start_backend() {
   log_info "Starting FastAPI backend on http://0.0.0.0:8000..."
   cd "$BACKEND_DIR"
   
-  source .venv/bin/activate
+  source "$VENV_DIR/bin/activate"
   
   # Start uvicorn
   exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --log-level info
@@ -217,7 +271,7 @@ else
   # Start backend in background
   log_info "Starting backend in background..."
   cd "$BACKEND_DIR"
-  source .venv/bin/activate
+  source "$VENV_DIR/bin/activate"
   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --log-level info > /tmp/brickfarm-backend.log 2>&1 &
   BACKEND_PID=$!
   log_info "Backend PID: $BACKEND_PID"

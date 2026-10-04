@@ -1,6 +1,7 @@
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
+from urllib.parse import quote_plus
 import os, sys
 
 # Add app path
@@ -16,6 +17,14 @@ target_metadata = Base.metadata
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     config.set_main_option("sqlalchemy.url", DATABASE_URL)
+elif all(os.getenv(name) for name in ("DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASS")):
+    db_user = quote_plus(os.environ["DB_USER"])
+    db_pass = quote_plus(os.environ["DB_PASS"])
+    db_host = os.environ["DB_HOST"]
+    db_port = os.environ["DB_PORT"]
+    db_name = os.environ["DB_NAME"]
+    database_url = f"postgresql+psycopg://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 def run_migrations_offline():
     url = config.get_main_option("sqlalchemy.url")

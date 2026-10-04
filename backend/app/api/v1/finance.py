@@ -2,11 +2,34 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy import text
 from app.api.deps import tenant_scoped_user
 from app.schemas.finance import TransactionIn, TransactionOut, InvestmentIn, InvestmentOut, PayoutIn, PayoutOut
-from app.db.session import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.security import TokenData
+import json
 
 router = APIRouter(tags=["finance"]) 
+
+
+def _row_to_dict(row):
+    data = dict(row._mapping)
+    for key, value in list(data.items()):
+        if hasattr(value, "isoformat"):
+            data[key] = value.isoformat()
+        elif value is not None and value.__class__.__name__ == "Decimal":
+            data[key] = float(value)
+        else:
+            data[key] = str(value) if key.endswith("_id") or key == "id" else value
+    return data
+
+
+@router.get('/transactions')
+async def list_transactions(ctx=Depends(tenant_scoped_user)):
+    token, db = ctx
+    res = await db.execute(text("""
+    SELECT id, account_id, amount, currency, ts, description, meta
+    FROM finance_transactions
+    WHERE tenant_id = :tenant_id
+    ORDER BY ts DESC
+    LIMIT 200
+    """), {"tenant_id": token.tenant_id})
+    return [_row_to_dict(row) for row in res.fetchall()]
 
 
 @router.post('/transactions', response_model=TransactionOut, status_code=status.HTTP_201_CREATED)
@@ -14,10 +37,10 @@ async def create_transaction(payload: TransactionIn, ctx=Depends(tenant_scoped_u
     token, db = ctx
     sql = text("""
     INSERT INTO finance_transactions (tenant_id, account_id, amount, currency, ts, description, meta)
-    VALUES (:tenant_id, :account_id, :amount, :currency, :ts, :description, :meta)
+    VALUES (:tenant_id, :account_id, :amount, :currency, COALESCE(:ts, now()), :description, CAST(:meta AS jsonb))
     RETURNING id, account_id, amount, currency, ts, description, meta
     """)
-    params = {"tenant_id": token.tenant_id, "account_id": str(payload.account_id), "amount": payload.amount, "currency": payload.currency, "ts": payload.ts, "description": payload.description, "meta": payload.meta}
+    params = {"tenant_id": token.tenant_id, "account_id": str(payload.account_id), "amount": payload.amount, "currency": payload.currency, "ts": payload.ts, "description": payload.description, "meta": json.dumps(payload.meta or {})}
     res = await db.execute(sql, params)
     row = res.fetchone()
     await db.commit()
@@ -26,15 +49,28 @@ async def create_transaction(payload: TransactionIn, ctx=Depends(tenant_scoped_u
     return TransactionOut(id=row.id, account_id=row.account_id, amount=row.amount, currency=row.currency, ts=row.ts, description=row.description, meta=row.meta)
 
 
+@router.get('/investments')
+async def list_investments(ctx=Depends(tenant_scoped_user)):
+    token, db = ctx
+    res = await db.execute(text("""
+    SELECT id, name, amount, currency, ts, meta
+    FROM investments
+    WHERE tenant_id = :tenant_id
+    ORDER BY ts DESC
+    LIMIT 200
+    """), {"tenant_id": token.tenant_id})
+    return [_row_to_dict(row) for row in res.fetchall()]
+
+
 @router.post('/investments', response_model=InvestmentOut, status_code=status.HTTP_201_CREATED)
 async def create_investment(payload: InvestmentIn, ctx=Depends(tenant_scoped_user)):
     token, db = ctx
     sql = text("""
     INSERT INTO investments (tenant_id, name, amount, currency, ts, meta)
-    VALUES (:tenant_id, :name, :amount, :currency, :ts, :meta)
+    VALUES (:tenant_id, :name, :amount, :currency, COALESCE(:ts, now()), CAST(:meta AS jsonb))
     RETURNING id, name, amount, currency, ts, meta
     """)
-    params = {"tenant_id": token.tenant_id, "name": payload.name, "amount": payload.amount, "currency": payload.currency, "ts": payload.ts, "meta": payload.meta}
+    params = {"tenant_id": token.tenant_id, "name": payload.name, "amount": payload.amount, "currency": payload.currency, "ts": payload.ts, "meta": json.dumps(payload.meta or {})}
     res = await db.execute(sql, params)
     row = res.fetchone()
     await db.commit()
@@ -60,12 +96,25 @@ async def attach_receipt(investment_id: str, file: UploadFile = File(...), ctx=D
     return {"id": getattr(row, 'id', None)}
 
 
+@router.get('/payouts')
+async def list_payouts(ctx=Depends(tenant_scoped_user)):
+    token, db = ctx
+    res = await db.execute(text("""
+    SELECT id, investment_id, amount, currency, ts, note
+    FROM payouts
+    WHERE tenant_id = :tenant_id
+    ORDER BY ts DESC
+    LIMIT 200
+    """), {"tenant_id": token.tenant_id})
+    return [_row_to_dict(row) for row in res.fetchall()]
+
+
 @router.post('/payouts', response_model=PayoutOut, status_code=status.HTTP_201_CREATED)
 async def create_payout(payload: PayoutIn, ctx=Depends(tenant_scoped_user)):
     token, db = ctx
     sql = text("""
     INSERT INTO payouts (tenant_id, investment_id, amount, currency, ts, note)
-    VALUES (:tenant_id, :investment_id, :amount, :currency, :ts, :note)
+    VALUES (:tenant_id, :investment_id, :amount, :currency, COALESCE(:ts, now()), :note)
     RETURNING id, investment_id, amount, currency, ts, note
     """)
     params = {"tenant_id": token.tenant_id, "investment_id": str(payload.investment_id), "amount": payload.amount, "currency": payload.currency, "ts": payload.ts, "note": payload.note}

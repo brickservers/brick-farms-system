@@ -29,6 +29,20 @@ services:
       # Map container redis port 6379 to host 6380 to avoid colliding with host redis
       - "6380:6379"
 
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DB_USER: brickfarm
+      DB_PASS: brickfarm_pass
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: brickfarm
+    depends_on:
+      - db
+      - redis
+
 volumes:
   db_data:
   db_data_dev:

@@ -14,8 +14,8 @@ export default defineConfig(async () => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'icons/*'],
         manifest: {
-          name: 'BrickFarm',
-          short_name: 'BrickFarm',
+          name: 'BrickFarms Digital Agricultural Platform',
+          short_name: 'BrickFarms DAP',
           start_url: '/',
           display: 'standalone',
           background_color: '#ffffff',

@@ -12,6 +12,7 @@ class TokenData(BaseModel):
     sub: str
     tenant_id: Optional[str] = None
     role: Optional[str] = None
+    type: Optional[str] = None
 
 def create_access_token(subject: str, tenant_id: str, role: str, expires_minutes: int = settings.ACCESS_TOKEN_EXPIRE_MINUTES):
     to_encode = {"sub": subject, "tenant_id": tenant_id, "role": role, "type": "access"}
@@ -28,8 +29,11 @@ def create_refresh_token(subject: str, tenant_id: str, expires_minutes: int = se
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenData:
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALG])
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         return TokenData(sub=payload.get("sub"),
                          tenant_id=payload.get("tenant_id"),
-                         role=payload.get("role"))
+                         role=payload.get("role"),
+                         type=payload.get("type"))
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from datetime import datetime
 from typing import Any, Dict
 
 
@@ -11,5 +12,5 @@ class PreferenceOut(BaseModel):
     id: int | None = None
     key: str
     value: Dict[str, Any]
-    created_at: str | None = None
-    updated_at: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

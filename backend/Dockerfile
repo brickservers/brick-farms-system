@@ -13,9 +13,11 @@ RUN pip wheel --wheel-dir=/wheels -r requirements.txt
 
 FROM python:3.12-slim
 WORKDIR /app
-
-# Create non-root user
-RUN groupadd -r app && useradd -r -g app app
+# Create non-root user and home directory
+RUN groupadd -r app \
+ && useradd -r -g app -d /home/app -s /sbin/nologin -m app \
+ && mkdir -p /home/app/.gunicorn \
+ && chown -R app:app /home/app
 
 # Copy pre-built wheels and install
 COPY --from=builder /wheels /wheels
@@ -30,6 +32,9 @@ RUN python -m pip install psycopg2-binary
 COPY . ./
 RUN chown -R app:app /app
 USER app
+
+# Ensure a sensible HOME inside the container
+ENV HOME=/home/app
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000

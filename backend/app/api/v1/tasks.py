@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from app.api.deps import tenant_scoped_user
 from app.services.files import put_object, presign_get_url
+from app.services.notifications import send_email
 import uuid, json
 from geoalchemy2.shape import to_shape
 from datetime import datetime
@@ -16,6 +17,7 @@ class TaskCreateIn(BaseModel):
     workorder_id: Optional[str] = None
     title: str
     assignee_id: Optional[str] = None
+    worker_id: Optional[str] = None
     due_at: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
@@ -34,26 +36,44 @@ class ObservationCreateIn(BaseModel):
 async def create_task(payload: TaskCreateIn, ctx=Depends(tenant_scoped_user)):
     token, db = ctx
     db: AsyncSession  # Type hint for IDE
+    worker_email = None
+    worker_name = None
+    if payload.worker_id:
+        worker_res = await db.execute(
+            text("SELECT id, full_name, email FROM farm_worker WHERE id = :worker_id AND tenant_id = :tenant_id AND status = 'active'"),
+            {"worker_id": payload.worker_id, "tenant_id": str(token.tenant_id)},
+        )
+        worker = worker_res.first()
+        if not worker:
+            raise HTTPException(400, "Worker must be active and belong to this tenant")
+        worker_email = worker.email
+        worker_name = worker.full_name
     if payload.lat is not None and payload.lng is not None:
         q = text("""
-        INSERT INTO task (tenant_id, workorder_id, title, assignee_id, status, location, gps_accuracy_m, created_at, due_at, meta)
-        VALUES (:tid, :wo, :title, :assignee, 'pending', ST_SetSRID(ST_MakePoint(:lng,:lat),4326), :gps, now(), :due, :meta)
+        INSERT INTO task (tenant_id, workorder_id, title, assignee_id, worker_id, status, location, gps_accuracy_m, created_at, due_at, meta)
+        VALUES (:tid, :wo, :title, :assignee, :worker, 'pending', ST_SetSRID(ST_MakePoint(:lng,:lat),4326), :gps, now(), :due, :meta)
         RETURNING id
         """)
         params = {"tid": str(token.tenant_id), "wo": payload.workorder_id, "title": payload.title,
-                  "assignee": payload.assignee_id, "gps": payload.gps_accuracy_m, "due": payload.due_at,
+                  "assignee": payload.assignee_id, "worker": payload.worker_id, "gps": payload.gps_accuracy_m, "due": payload.due_at,
                   "lat": payload.lat, "lng": payload.lng, "meta": json.dumps(payload.meta)}
     else:
         q = text("""
-        INSERT INTO task (tenant_id, workorder_id, title, assignee_id, status, created_at, due_at, meta)
-        VALUES (:tid, :wo, :title, :assignee, 'pending', now(), :due, :meta)
+        INSERT INTO task (tenant_id, workorder_id, title, assignee_id, worker_id, status, created_at, due_at, meta)
+        VALUES (:tid, :wo, :title, :assignee, :worker, 'pending', now(), :due, :meta)
         RETURNING id
         """)
         params = {"tid": str(token.tenant_id), "wo": payload.workorder_id, "title": payload.title,
-                  "assignee": payload.assignee_id, "due": payload.due_at, "meta": json.dumps(payload.meta)}
+                  "assignee": payload.assignee_id, "worker": payload.worker_id, "due": payload.due_at, "meta": json.dumps(payload.meta)}
     res = await db.execute(q, params)
     row = res.first()
     await db.commit()
+    await send_email(
+        worker_email,
+        "New BrickFarms DAP task assignment",
+        f"Hello {worker_name or 'team member'},\n\nA task has been assigned to you: {payload.title}.\n"
+        f"Due date: {payload.due_at or 'Not set'}.\n\nSigned,\nBrickServers NG Limited",
+    )
     return {"id": str(row.id)}
 
 @router.post("/observations")
@@ -131,22 +151,29 @@ async def list_tasks(
     ctx=Depends(tenant_scoped_user)
 ):
     token, db = ctx
-    query = "SELECT id, farm_id, title as name, description, status, assignee_id, due_at, created_at, updated_at, ST_AsGeoJSON(location) as location FROM task WHERE tenant_id = app_current_tenant()"
+    query = """
+    SELECT t.id, t.farm_id, t.title as name, t.description, t.status, t.assignee_id,
+           t.worker_id, w.full_name AS worker_name, t.due_at, t.created_at, t.updated_at,
+           ST_AsGeoJSON(t.location) as location
+    FROM task t
+    LEFT JOIN farm_worker w ON w.id = t.worker_id AND w.tenant_id = t.tenant_id
+    WHERE t.tenant_id = app_current_tenant()
+    """
     params = {}
     if status:
-        query += " AND status = :status"
+        query += " AND t.status = :status"
         params["status"] = status
     if assignee_id:
-        query += " AND assignee_id = :assignee_id"
+        query += " AND t.assignee_id = :assignee_id"
         params["assignee_id"] = str(assignee_id)
     if bbox:
         try:
             minx,miny,maxx,maxy = [float(x) for x in bbox.split(",")]
-            query += " AND location IS NOT NULL AND ST_Within(location, ST_MakeEnvelope(:minx,:miny,:maxx,:maxy,4326))"
+            query += " AND t.location IS NOT NULL AND ST_Within(t.location, ST_MakeEnvelope(:minx,:miny,:maxx,:maxy,4326))"
             params.update({"minx": minx, "miny": miny, "maxx": maxx, "maxy": maxy})
         except Exception:
             raise HTTPException(400, "Invalid bbox format")
-    query += " ORDER BY created_at DESC LIMIT 1000"
+    query += " ORDER BY t.created_at DESC LIMIT 1000"
     res = await db.execute(sql_text(query), params)
     rows = res.fetchall()
     out = []

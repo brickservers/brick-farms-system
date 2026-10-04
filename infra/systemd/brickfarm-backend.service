@@ -1,0 +1,21 @@
+[Unit]
+Description=BrickFarm FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bitnami
+Group=bitnami
+WorkingDirectory=/opt/bitnami/apache2/htdocs/farm/backend
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/bitnami/apache2/htdocs/farm/backend/.env.prod
+EnvironmentFile=-/opt/bitnami/apache2/htdocs/farm/backend/.env.prod.local
+ExecStart=/opt/bitnami/apache2/htdocs/farm/backend/.venv-prod/bin/gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 127.0.0.1:8001 --workers 2 --timeout 120 --log-level info
+Restart=always
+RestartSec=5
+KillSignal=SIGQUIT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

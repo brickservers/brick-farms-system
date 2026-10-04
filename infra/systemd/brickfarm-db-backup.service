@@ -1,0 +1,11 @@
+[Unit]
+Description=BrickFarm PostgreSQL backup
+
+[Service]
+Type=oneshot
+User=bitnami
+Group=bitnami
+WorkingDirectory=/opt/bitnami/apache2/htdocs/farm
+Environment=BACKUP_DIR=/opt/bitnami/backups/brickfarm/postgres
+Environment=RETENTION_DAYS=14
+ExecStart=/opt/bitnami/apache2/htdocs/farm/infra/scripts/backup_postgres.sh

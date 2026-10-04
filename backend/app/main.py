@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.logging import setup_logging
 
-from app.api.v1 import auth, tenants, farms, fields, crops, sensors, tasks, tiles, uploads, plots, finance, reports, preferences
+from app.api.v1 import auth, tenants, farms, fields, crops, sensors, tasks, tiles, uploads, plots, finance, reports, preferences, workers, team, assets, farm_plans, payments
 
 setup_logging()
 app = FastAPI(title="BrickFarm API", version="0.1.0")
@@ -30,6 +30,11 @@ app.include_router(finance.router, prefix="/api/v1/finance")
 app.include_router(reports.router, prefix="/api/v1/reports")
 app.include_router(preferences.router, prefix="/api/v1")
 app.include_router(tasks.router, prefix="/api/v1")
+app.include_router(workers.router, prefix="/api/v1/workers")
+app.include_router(team.router, prefix="/api/v1/team")
+app.include_router(assets.router, prefix="/api/v1/assets")
+app.include_router(farm_plans.router, prefix="/api/v1/farm-plans")
+app.include_router(payments.router, prefix="/api/v1/payments")
 app.include_router(tiles.router, prefix="/api/v1")
 app.include_router(uploads.router, prefix="/api/v1")
 

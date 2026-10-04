@@ -30,6 +30,25 @@ class Settings(BaseSettings):
     CELERY_BACKEND: str = os.getenv("CELERY_BACKEND", REDIS_URL)
 
     DEFAULT_PLAN: str = "enterprise"
+
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.zoho.com")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASS: str = os.getenv("SMTP_PASS", "")
+    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "sprout@brickfarms.ng")
+    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "BrickFarms DAP")
+    SMTP_USE_TLS: bool = False if os.getenv("SMTP_USE_TLS", "true").lower() != "true" else True
+
+    SMS_PROVIDER_URL: str = os.getenv("SMS_PROVIDER_URL", "")
+    SMS_PROVIDER_TOKEN: str = os.getenv("SMS_PROVIDER_TOKEN", "")
+    SMS_FROM: str = os.getenv("SMS_FROM", "BrickFarms")
+
+    FLUTTERWAVE_API_BASE: str = os.getenv("FLUTTERWAVE_API_BASE", "https://api.flutterwave.com")
+    FLUTTERWAVE_PUBLIC_KEY: str = os.getenv("FLUTTERWAVE_PUBLIC_KEY", "")
+    FLUTTERWAVE_SECRET_KEY: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
+    FLUTTERWAVE_WEBHOOK_SECRET: str = os.getenv("FLUTTERWAVE_WEBHOOK_SECRET", "")
+    FLUTTERWAVE_REDIRECT_URL: str = os.getenv("FLUTTERWAVE_REDIRECT_URL", "https://app.brickfarms.ng/settings")
+
     # Allow local frontend dev server by default for developer workflows
     CORS_ORIGINS: List[str] = ["http://localhost:5173"]
 
@@ -38,4 +57,3 @@ class Settings(BaseSettings):
         case_sensitive = True
 
 settings = Settings()
-
